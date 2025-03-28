@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bouncing Ball Simulation</title>
+  <!-- Link to the external CSS file -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="controlPanel">
+    <button id="startButton">Start Simulation</button>
+    <button id="endButton" disabled>End Simulation</button>
+    
+    <h2>Polygon Settings</h2>
+    <label for="polygonRadius">
+      Polygon Radius: <span id="polygonRadiusValue">250</span>
+    </label>
+    <input type="range" id="polygonRadius" min="10" max="1000" value="250" step="1">
+    
+    <label for="polygonSides">
+      Polygon Sides: <span id="polygonSidesValue">15</span>
+    </label>
+    <input type="range" id="polygonSides" min="3" max="100" value="15" step="1">
+    
+    <label for="polygonShrinkRate">
+      Polygon Shrink Rate: <span id="polygonShrinkRateValue">0.99</span>
+    </label>
+    <input type="range" id="polygonShrinkRate" min="0.5" max="1" value="0.99" step="0.001">
+    
+    <label for="polygonMinRadius">
+      Polygon Min Radius: <span id="polygonMinRadiusValue">75</span>
+    </label>
+    <input type="range" id="polygonMinRadius" min="5" max="300" value="75" step="1">
+    
+    <h2>Ball Settings</h2>
+    <label for="ballRadius">
+      Ball Radius: <span id="ballRadiusValue">15</span>
+    </label>
+    <input type="range" id="ballRadius" min="1" max="100" value="15" step="1">
+    
+    <label for="ballVx">
+      Ball Velocity X: <span id="ballVxValue">10</span>
+    </label>
+    <input type="range" id="ballVx" min="-50" max="50" value="10" step="1">
+    
+    <label for="ballVy">
+      Ball Velocity Y: <span id="ballVyValue">-15</span>
+    </label>
+    <input type="range" id="ballVy" min="-50" max="50" value="-15" step="1">
+    
+    <label for="ballGravity">
+      Ball Gravity: <span id="ballGravityValue">0.2</span>
+    </label>
+    <input type="range" id="ballGravity" min="0" max="2" value="0.2" step="0.01">
+    
+    <label for="ballFriction">
+      Ball Friction: <span id="ballFrictionValue">1</span>
+    </label>
+    <input type="range" id="ballFriction" min="0.1" max="1.5" value="1" step="0.01">
+    
+    <label for="ballElasticity">
+      Ball Elasticity: <span id="ballElasticityValue">0.8</span>
+    </label>
+    <input type="range" id="ballElasticity" min="0" max="1" value="0.8" step="0.01">
+    
+    <label for="ballDrag">
+      Ball Drag: <span id="ballDragValue">0.99</span>
+    </label>
+    <input type="range" id="ballDrag" min="0.90" max="1" value="0.99" step="0.001">
+    
+    <label for="ballTerminalVelocity">
+      Terminal Velocity: <span id="ballTerminalVelocityValue">50</span>
+    </label>
+    <input type="range" id="ballTerminalVelocity" min="20" max="200" value="50" step="1">
+    
+    <h2>Other Settings</h2>
+    <label for="spawnTime">
+      Spawn Time (sec): <span id="spawnTimeValue">0.7</span>
+    </label>
+    <input type="range" id="spawnTime" min="0.1" max="10" value="0.7" step="0.1">
+    
+    <label for="rotationSpeed">
+      Rotation Speed: <span id="rotationSpeedValue">0.02</span>
+    </label>
+    <input type="range" id="rotationSpeed" min="0.001" max="1.0" value="0.02" step="0.001">
+    
+    <!-- Toggle for the hit indicator -->
+    <label for="hitIndicatorToggle">
+      <input type="checkbox" id="hitIndicatorToggle" checked> Show Hit Indicator
+    </label>
+  </div>
+  
+  <canvas id="gameCanvas"></canvas>
+  <script>
+    // Resize the canvas to remain square and responsive
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    function resizeCanvas() {
+      const size = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.9);
+      canvas.width = size;
+      canvas.height = size;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    let simulationRunning = false;
+    let animationId = null;
+
+    // Settings with wider ranges and new parameters for realism
+    const settings = {
+      polygon: {
+        radius: 250,
+        sides: 15,
+        shrinkRate: 0.99,
+        minRadius: 75
+      },
+      ball: {
+        radius: 15,
+        vx: 10,
+        vy: -15,
+        gravity: 0.2,
+        friction: 1,
+        elasticity: 0.8,
+        drag: 0.99,
+        terminalVelocity: 50
+      },
+      spawnTime: 0.7,
+      rotationSpeed: 0.02,
+      showHitIndicator: true  // Toggle for hit indicator effects
+    };
+
+    // Ball with angular properties for spin
+    let ball = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      vx: settings.ball.vx,
+      vy: settings.ball.vy,
+      rotation: 0,
+      angularVelocity: 0
+    };
+
+    let initialPolygon = {
+      radius: settings.polygon.radius,
+      angle: 0,
+      removedEdges: [],
+      sides: settings.polygon.sides,
+    };
+
+    let polygons = [];
+    let lastSpawnTimestamp = 0;
+    let impactEffects = [];
+
+    // Calculate polygon vertices based on radius, sides, and rotation
+    function getPolygonVertices(radius, sides, angleOffset) {
+      const vertices = [];
+      for (let i = 0; i < sides; i++) {
+        const angle = (2 * Math.PI / sides) * i + angleOffset;
+        vertices.push({
+          x: Math.cos(angle) * radius + canvas.width / 2,
+          y: Math.sin(angle) * radius + canvas.height / 2,
+        });
+      }
+      return vertices;
+    }
+
+    // Return polygon edges from vertices
+    function getPolygonEdges(vertices) {
+      let edges = [];
+      const sides = vertices.length;
+      for (let i = 0; i < sides; i++) {
+        const p1 = vertices[i];
+        const p2 = vertices[(i + 1) % sides];
+        edges.push({ p1, p2, index: i });
+      }
+      return edges;
+    }
+
+    // Vector reflection for realistic bounce
+    function reflectVector(vx, vy, nx, ny) {
+      const dot = vx * nx + vy * ny;
+      return {
+        vx: vx - 2 * dot * nx,
+        vy: vy - 2 * dot * ny
+      };
+    }
+
+    // Check collision between ball and polygon; add spin and visual feedback on impact
+    function checkCollision(ball, polygon) {
+      const vertices = getPolygonVertices(polygon.radius, polygon.sides, polygon.angle);
+      const edges = getPolygonEdges(vertices);
+      for (let i = 0; i < edges.length; i++) {
+        const { p1, p2, index } = edges[i];
+        if (polygon.removedEdges.includes(index)) continue;
+        const lineVec = { x: p2.x - p1.x, y: p2.y - p1.y };
+        const ballVec = { x: ball.x - p1.x, y: ball.y - p1.y };
+        const dotProduct = ballVec.x * lineVec.x + ballVec.y * lineVec.y;
+        const lineLengthSq = lineVec.x ** 2 + lineVec.y ** 2;
+        const projection = Math.max(0, Math.min(dotProduct / lineLengthSq, 1));
+        const closestPoint = {
+          x: p1.x + projection * lineVec.x,
+          y: p1.y + projection * lineVec.y
+        };
+        const distance = Math.hypot(closestPoint.x - ball.x, closestPoint.y - ball.y);
+        if (distance < settings.ball.radius) {
+          let normal = { x: ball.x - closestPoint.x, y: ball.y - closestPoint.y };
+          const normalLength = Math.hypot(normal.x, normal.y);
+          normal.x /= normalLength;
+          normal.y /= normalLength;
+          const reflected = reflectVector(ball.vx, ball.vy, normal.x, normal.y);
+          ball.vx = reflected.vx * settings.ball.elasticity * settings.ball.friction;
+          ball.vy = reflected.vy * settings.ball.elasticity * settings.ball.friction;
+          ball.angularVelocity += (Math.random() - 0.5) * 0.1;
+          // Create impact effect if hit indicator is enabled
+          if (settings.showHitIndicator) {
+            impactEffects.push({ x: closestPoint.x, y: closestPoint.y, radius: 10, alpha: 1.0 });
+          }
+          polygon.removedEdges.push(index);
+          break;
+        }
+      }
+    }
+
+    // Main animation loop updating physics, drawing shapes, and handling impact effects
+    function update(timestamp) {
+      if (
+        ball.x < -settings.ball.radius ||
+        ball.x > canvas.width + settings.ball.radius ||
+        ball.y < -settings.ball.radius ||
+        ball.y > canvas.height + settings.ball.radius
+      ) {
+        simulationRunning = false;
+        document.getElementById('startButton').disabled = false;
+        document.getElementById('endButton').disabled = true;
+        return;
+      }
+      
+      if (timestamp - lastSpawnTimestamp > settings.spawnTime * 1000) {
+        spawnPolygon();
+        lastSpawnTimestamp = timestamp;
+      }
+      
+      ball.vy = Math.min(ball.vy + settings.ball.gravity, settings.ball.terminalVelocity);
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+      ball.vx *= settings.ball.drag;
+      ball.vy *= settings.ball.drag;
+      ball.rotation += ball.angularVelocity;
+      ball.angularVelocity *= 0.98;
+      
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      for (let i = polygons.length - 1; i >= 0; i--) {
+        const polygon = polygons[i];
+        const vertices = getPolygonVertices(polygon.radius, polygon.sides, polygon.angle);
+        const edges = getPolygonEdges(vertices);
+        checkCollision(ball, polygon);
+        polygon.radius *= settings.polygon.shrinkRate;
+        if (polygon.radius <= settings.polygon.minRadius) {
+          polygons.splice(i, 1);
+          continue;
+        }
+        ctx.beginPath();
+        edges.forEach(edge => {
+          if (!polygon.removedEdges.includes(edge.index)) {
+            ctx.moveTo(edge.p1.x, edge.p1.y);
+            ctx.lineTo(edge.p2.x, edge.p2.y);
+          }
+        });
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 5;
+        ctx.stroke();
+        ctx.closePath();
+        polygon.angle += settings.rotationSpeed;
+      }
+      
+      // Draw impact effects if enabled
+      if (settings.showHitIndicator) {
+        for (let i = impactEffects.length - 1; i >= 0; i--) {
+          const effect = impactEffects[i];
+          ctx.save();
+          ctx.globalAlpha = effect.alpha;
+          ctx.beginPath();
+          ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
+          ctx.fillStyle = 'yellow';
+          ctx.fill();
+          ctx.closePath();
+          ctx.restore();
+          effect.alpha -= 0.03;
+          effect.radius += 0.5;
+          if (effect.alpha <= 0) {
+            impactEffects.splice(i, 1);
+          }
+        }
+      }
+      
+      ctx.save();
+      ctx.translate(ball.x, ball.y);
+      ctx.rotate(ball.rotation);
+      ctx.beginPath();
+      ctx.arc(0, 0, settings.ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'red';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(settings.ball.radius, 0);
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+      
+      if (simulationRunning) {
+        animationId = requestAnimationFrame(update);
+      }
+    }
+    
+    function spawnPolygon() {
+      initialPolygon.radius = settings.polygon.radius;
+      initialPolygon.sides = settings.polygon.sides;
+      polygons.push({
+        radius: initialPolygon.radius,
+        angle: 0,
+        removedEdges: [],
+        sides: initialPolygon.sides,
+      });
+    }
+    
+    function addSliderListener(id, settingPath, displayId, isFloat = false) {
+      const slider = document.getElementById(id);
+      const display = document.getElementById(displayId);
+      slider.addEventListener('input', (e) => {
+        const value = isFloat ? parseFloat(e.target.value) : parseInt(e.target.value);
+        display.textContent = e.target.value;
+        const keys = settingPath.split('.');
+        if (keys.length === 1) {
+          settings[keys[0]] = value;
+        } else if (keys.length === 2) {
+          settings[keys[0]][keys[1]] = value;
+        }
+      });
+    }
+    
+    // Initialize slider listeners
+    addSliderListener('polygonRadius', 'polygon.radius', 'polygonRadiusValue', true);
+    addSliderListener('polygonSides', 'polygon.sides', 'polygonSidesValue');
+    addSliderListener('polygonShrinkRate', 'polygon.shrinkRate', 'polygonShrinkRateValue', true);
+    addSliderListener('polygonMinRadius', 'polygon.minRadius', 'polygonMinRadiusValue', true);
+    
+    addSliderListener('ballRadius', 'ball.radius', 'ballRadiusValue', true);
+    addSliderListener('ballVx', 'ball.vx', 'ballVxValue', true);
+    addSliderListener('ballVy', 'ball.vy', 'ballVyValue', true);
+    addSliderListener('ballGravity', 'ball.gravity', 'ballGravityValue', true);
+    addSliderListener('ballFriction', 'ball.friction', 'ballFrictionValue', true);
+    addSliderListener('ballElasticity', 'ball.elasticity', 'ballElasticityValue', true);
+    addSliderListener('ballDrag', 'ball.drag', 'ballDragValue', true);
+    addSliderListener('ballTerminalVelocity', 'ball.terminalVelocity', 'ballTerminalVelocityValue', true);
+    
+    addSliderListener('spawnTime', 'spawnTime', 'spawnTimeValue', true);
+    addSliderListener('rotationSpeed', 'rotationSpeed', 'rotationSpeedValue', true);
+    
+    // Toggle hit indicator using checkbox
+    document.getElementById('hitIndicatorToggle').addEventListener('change', function() {
+      settings.showHitIndicator = this.checked;
+    });
+    
+    // Start simulation on button click
+    document.getElementById('startButton').addEventListener('click', function() {
+      ball.x = canvas.width / 2;
+      ball.y = canvas.height / 2;
+      ball.vx = settings.ball.vx;
+      ball.vy = settings.ball.vy;
+      ball.rotation = 0;
+      ball.angularVelocity = 0;
+      polygons = [];
+      impactEffects = [];
+      spawnPolygon();
+      lastSpawnTimestamp = performance.now();
+      simulationRunning = true;
+      animationId = requestAnimationFrame(update);
+      this.disabled = true;
+      document.getElementById('endButton').disabled = false;
+    });
+    
+    // End simulation on button click
+    document.getElementById('endButton').addEventListener('click', function() {
+      simulationRunning = false;
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+      document.getElementById('startButton').disabled = false;
+      this.disabled = true;
+    });
+  </script>
+</body>
+</html>
